@@ -1,0 +1,24 @@
+# dependencies
+/node_modules
+
+# next
+/.next/
+/out/
+
+# data & uploads (jangan commit)
+/data/
+*.db
+*.db-shm
+*.db-wal
+/uploads/
+
+# env
+.env
+.env.local
+
+# pm2 logs
+/logs/
+
+# misc
+.DS_Store
+*.log
