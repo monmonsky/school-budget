@@ -128,10 +128,72 @@ sudo chown -R 1000:1000 data uploads       # container jalan sebagai user `bun` 
 `DB_PATH=./data/app.db` dan `UPLOAD_DIR=./uploads` di `.env` dipakai apa adanya —
 cwd container adalah `/app`, dan kedua folder itu di-mount ke sana.
 
-### 7.3 Jalankan
+### 7.3 Memakai database yang sudah ada
+
+Container membaca folder `data/` di host lewat bind mount, **bukan** salinan di
+dalam image. Jadi kalau `data/app.db` sudah ada di folder project, tidak ada
+migrasi apa pun — container langsung memakainya.
+
+Seed tidak akan menimpa data lama: `lib/db.ts` melewati seed kalau baris
+`settings` sudah ada. Konsekuensinya, untuk database yang sudah terisi,
+`APP_PASSWORD`, `FUND_NAME`, dan `INITIAL_BALANCE` di `.env` **diabaikan** —
+login tetap dengan password lama, dan saldo awal tetap nilai lama. Ganti
+password lewat menu Pengaturan, bukan lewat `.env`.
+
+#### Kalau app-nya masih jalan di host yang sama (pindah dari PM2)
+
+Cukup matikan proses lama, lalu nyalakan container:
 
 ```bash
-# Kalau sebelumnya pakai PM2, matikan dulu supaya port 3004 tidak bentrok:
+pm2 delete school-mgmt              # shutdown bersih -> WAL ter-checkpoint
+sudo chown -R 1000:1000 data uploads
+docker compose up -d --build
+```
+
+#### Kalau database disalin dari mesin lain
+
+**Jangan copy `app.db` saja.** Aplikasi memakai mode WAL, jadi transaksi terbaru
+bisa masih berada di `app.db-wal` dan belum masuk ke `app.db`. Menyalin `.db`
+sendirian bisa menghasilkan database yang bahkan skemanya belum ada
+(`no such table: transactions`).
+
+Hentikan dulu aplikasinya, lalu satukan WAL ke dalam `.db`:
+
+```bash
+pm2 delete school-mgmt      # atau: docker compose down
+sqlite3 data/app.db "PRAGMA wal_checkpoint(TRUNCATE); PRAGMA integrity_check;"
+```
+
+Hasil yang diharapkan: `app.db` membesar, `app.db-wal` dan `app.db-shm` hilang,
+`integrity_check` mengembalikan `ok`. Setelah itu `app.db` sudah mandiri dan
+aman dikirim:
+
+```bash
+rsync -avz data/ uploads/ vps:/var/www/school-mgmt/   # kuitansi ikut!
+```
+
+Tanpa `sqlite3` di mesin itu, checkpoint bisa dilakukan lewat image ini:
+
+```bash
+docker run --rm -v "$PWD/data:/d" school-mgmt:latest \
+  bun -e 'const {Database}=await import("bun:sqlite");
+          const d=new Database("/d/app.db");
+          console.log(d.query("PRAGMA wal_checkpoint(TRUNCATE)").get());
+          console.log(d.query("PRAGMA integrity_check").get());'
+```
+
+Alternatif tanpa menghentikan aplikasi: salin **ketiga** file bersamaan
+(`app.db`, `app.db-wal`, `app.db-shm`) — tapi menghentikan aplikasi lebih aman,
+karena copy saat ada penulisan bisa menangkap keadaan setengah jalan.
+
+Jangan lupa `uploads/`: baris di tabel `attachments` menunjuk ke file di sana,
+dan tanpa file-nya kuitansi jadi tautan mati.
+
+### 7.4 Jalankan
+
+```bash
+# Kalau sebelumnya pakai PM2, matikan dulu (lihat 7.3) supaya port 3004
+# tidak bentrok dan WAL ter-checkpoint dengan bersih:
 pm2 delete school-mgmt
 
 docker compose up -d --build
@@ -145,7 +207,7 @@ Cek lokal: `curl -I http://127.0.0.1:3004/login` → harus `200`.
 > `@next/swc` bersifat native per arsitektur. Kalau memang mau build di laptop
 > Apple Silicon untuk VPS x86, pakai `docker buildx build --platform linux/amd64`.
 
-### 7.4 Update versi baru
+### 7.5 Update versi baru
 
 ```bash
 cd /var/www/school-mgmt
@@ -165,7 +227,7 @@ docker builder prune -af           # buang semua cache (build berikutnya lebih l
 `restart: unless-stopped` membuat container hidup lagi otomatis setelah reboot VPS —
 tidak perlu `pm2 startup`.
 
-### 7.5 Hal yang perlu diingat
+### 7.6 Hal yang perlu diingat
 
 - **Jangan `docker compose up --scale app=2`.** SQLite satu file, satu penulis;
   dua container yang menulis bersamaan bisa merusak database.
