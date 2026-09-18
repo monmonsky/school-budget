@@ -1,57 +1,92 @@
 import Link from "next/link";
 import { requireAuth } from "@/lib/auth";
-import { listAudit } from "@/lib/queries";
+import { countAudit, listAudit } from "@/lib/queries";
 import { tanggalWaktu } from "@/lib/format";
+import PageHeader from "@/components/PageHeader";
 
-const actionLabel: Record<string, { text: string; cls: string }> = {
-  create: { text: "Tambah", cls: "bg-emerald-50 text-emerald-700" },
-  update: { text: "Ubah", cls: "bg-amber-50 text-amber-700" },
-  delete: { text: "Hapus", cls: "bg-rose-50 text-rose-700" },
+const ACTION_LABELS: Record<string, { text: string; className: string }> = {
+  create: { text: "Tambah", className: "bg-ledger-soft text-ledger" },
+  update: { text: "Ubah", className: "bg-brass-soft text-brass-ink" },
+  delete: { text: "Hapus", className: "bg-oxide-soft text-oxide" },
 };
 
-export default async function AuditPage() {
+const AUDIT_LIMIT = 200;
+
+export default async function AuditLogPage() {
   await requireAuth();
-  const logs = listAudit(200);
+  const entries = listAudit(AUDIT_LIMIT);
+  const totalEntries = countAudit();
+  const isTruncated = totalEntries > entries.length;
 
   return (
-    <div className="space-y-5">
-      <h1 className="text-xl font-bold">Jejak Perubahan</h1>
-      <p className="text-sm text-slate-500">
-        Riwayat tambah, ubah, dan hapus transaksi. Transaksi yang dihapus tidak ikut
-        perhitungan saldo, tetapi tetap tercatat di sini.
-      </p>
+    <>
+      <PageHeader
+        eyebrow="Buku kas"
+        title="Jejak perubahan"
+        description="Riwayat tambah, ubah, dan hapus transaksi. Transaksi yang dihapus berhenti dihitung di saldo, tetapi catatannya tetap ada di sini."
+      />
 
-      {logs.length === 0 ? (
-        <div className="card text-center text-sm text-slate-500">Belum ada aktivitas.</div>
+      {entries.length === 0 ? (
+        <div className="card-pad text-center text-sm text-ink-soft">
+          Belum ada aktivitas tercatat.
+        </div>
       ) : (
-        <div className="card divide-y divide-slate-100 p-0">
-          {logs.map((l) => {
-            const a = actionLabel[l.action] ?? { text: l.action, cls: "bg-slate-100" };
-            return (
-              <div key={l.id} className="flex items-center gap-3 px-4 py-3">
-                <span className={`badge ${a.cls}`}>{a.text}</span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm">
-                    {l.transaction_id ? (
-                      <Link
-                        href={`/transaksi/${l.transaction_id}`}
-                        className="text-indigo-600 hover:underline"
-                      >
-                        Transaksi #{l.transaction_id}
-                      </Link>
-                    ) : (
-                      "Transaksi"
-                    )}
-                  </p>
-                  <p className="truncate text-xs text-slate-400">
-                    {tanggalWaktu(l.created_at)}
-                  </p>
-                </div>
-              </div>
-            );
-          })}
+        <div className="card overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="ledger-table">
+              <thead>
+                <tr>
+                  <th scope="col" className="w-52">
+                    Waktu
+                  </th>
+                  <th scope="col" className="w-28">
+                    Aksi
+                  </th>
+                  <th scope="col">Transaksi</th>
+                  <th scope="col">Kategori</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map((entry) => {
+                  const label = ACTION_LABELS[entry.action] ?? {
+                    text: entry.action,
+                    className: "bg-paper-sunk text-ink-soft",
+                  };
+                  return (
+                    <tr key={entry.id}>
+                      <td className="num whitespace-nowrap text-ink-soft">
+                        {tanggalWaktu(entry.created_at)}
+                      </td>
+                      <td>
+                        <span className={`badge ${label.className}`}>{label.text}</span>
+                      </td>
+                      <td>
+                        {entry.transaction_id ? (
+                          <Link
+                            href={`/transaksi/${entry.transaction_id}`}
+                            className="num font-medium text-ink decoration-rule-strong underline-offset-4 hover:underline"
+                          >
+                            #{entry.transaction_id}
+                          </Link>
+                        ) : (
+                          <span className="text-ink-faint">—</span>
+                        )}
+                      </td>
+                      <td className="text-ink-faint">{entry.category_name ?? "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {isTruncated && (
+            <p className="border-t border-rule bg-paper-sunk/60 px-4 py-3 text-xs text-ink-faint">
+              Menampilkan <span className="num">{entries.length}</span> aktivitas terbaru dari
+              total <span className="num">{totalEntries}</span>.
+            </p>
+          )}
         </div>
       )}
-    </div>
+    </>
   );
 }

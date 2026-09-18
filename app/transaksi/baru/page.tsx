@@ -1,9 +1,10 @@
 import { requireAuth } from "@/lib/auth";
 import { listCategories, listSemesters } from "@/lib/queries";
 import { createTransaction } from "@/lib/actions";
+import PageHeader from "@/components/PageHeader";
 import TxForm from "@/components/TxForm";
 
-export default async function TambahTransaksi({
+export default async function NewTransactionPage({
   searchParams,
 }: {
   searchParams: Promise<{ type?: string }>;
@@ -14,14 +15,18 @@ export default async function TambahTransaksi({
   const semesters = listSemesters();
 
   return (
-    <div className="space-y-5">
-      <h1 className="text-xl font-bold">Tambah Transaksi</h1>
+    <div className="mx-auto max-w-2xl">
+      <PageHeader
+        eyebrow="Buku kas"
+        title="Tambah transaksi"
+        description="Catat dana yang masuk atau keluar, lalu lampirkan kuitansinya."
+      />
       <TxForm
         action={createTransaction}
         categories={categories}
         semesters={semesters}
         defaults={{ type: type === "in" ? "in" : "out" }}
-        submitLabel="Simpan Transaksi"
+        submitLabel="Simpan transaksi"
       />
     </div>
   );

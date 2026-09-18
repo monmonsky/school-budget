@@ -2,38 +2,43 @@ import { notFound } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
 import { getTransaction, listCategories, listSemesters } from "@/lib/queries";
 import { updateTransaction } from "@/lib/actions";
+import PageHeader from "@/components/PageHeader";
 import TxForm from "@/components/TxForm";
 
-export default async function EditTransaksi({
+export default async function EditTransactionPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   await requireAuth();
   const { id } = await params;
-  const txId = Number(id);
-  const tx = getTransaction(txId);
-  if (!tx || tx.deleted_at) notFound();
+  const transactionId = Number(id);
+  const transaction = getTransaction(transactionId);
+  if (!transaction || transaction.deleted_at) notFound();
 
   const categories = listCategories();
   const semesters = listSemesters();
 
   return (
-    <div className="space-y-5">
-      <h1 className="text-xl font-bold">Edit Transaksi</h1>
+    <div className="mx-auto max-w-2xl">
+      <PageHeader
+        eyebrow={`Transaksi #${transactionId}`}
+        title="Ubah transaksi"
+        description="Perubahan tercatat di halaman Jejak."
+      />
       <TxForm
-        action={updateTransaction.bind(null, txId)}
+        action={updateTransaction.bind(null, transactionId)}
         categories={categories}
         semesters={semesters}
         defaults={{
-          type: tx.type,
-          amount: tx.amount,
-          date: tx.date,
-          category_id: tx.category_id,
-          semester_id: tx.semester_id,
-          note: tx.note,
+          type: transaction.type,
+          amount: transaction.amount,
+          date: transaction.date,
+          category_id: transaction.category_id,
+          semester_id: transaction.semester_id,
+          note: transaction.note,
         }}
-        submitLabel="Simpan Perubahan"
+        submitLabel="Simpan perubahan"
       />
     </div>
   );

@@ -1,68 +1,88 @@
 import Link from "next/link";
 import { requireAuth } from "@/lib/auth";
-import { getBalance, getSettings, listTransactions } from "@/lib/queries";
+import { getBalance, getFundMeter, getSettings, listTransactions } from "@/lib/queries";
 import { rupiah } from "@/lib/format";
-import TxRow from "@/components/TxRow";
+import PageHeader from "@/components/PageHeader";
+import FundMeter from "@/components/FundMeter";
+import TxList from "@/components/TxList";
+import { IconArrowDownLeft, IconArrowUpRight } from "@/components/icons";
 
-export default async function Dashboard() {
+const RECENT_LIMIT = 8;
+
+export default async function DashboardPage() {
   await requireAuth();
-  const s = getSettings();
-  const { balance, totalIn, totalOut, count } = getBalance();
-  const recent = listTransactions().slice(0, 8);
+  const settings = getSettings();
+  const { totalIn, totalOut, count } = getBalance();
+  const meter = getFundMeter();
+  const recent = listTransactions().slice(0, RECENT_LIMIT);
+
+  const stats = [
+    { label: "Saldo awal", value: rupiah(settings.initial_balance), tone: "text-ink" },
+    { label: "Dana masuk", value: `+${rupiah(totalIn)}`, tone: "text-ledger" },
+    { label: "Dana keluar", value: `−${rupiah(totalOut)}`, tone: "text-oxide" },
+    { label: "Transaksi", value: String(count), tone: "text-ink" },
+  ];
 
   return (
-    <div className="space-y-6">
-      <section className="card bg-gradient-to-br from-indigo-600 to-violet-600 text-white ring-0">
-        <p className="text-sm text-indigo-100">Saldo saat ini · {s.fund_name}</p>
-        <p className="mt-1 text-4xl font-bold tracking-tight">{rupiah(balance)}</p>
-        <p className="mt-2 text-sm text-indigo-100">
-          Saldo awal {rupiah(s.initial_balance)}
-        </p>
-      </section>
+    <>
+      <PageHeader
+        eyebrow={settings.fund_name}
+        title="Beranda"
+        actions={
+          <>
+            <Link href="/transaksi/baru?type=out" className="btn-primary">
+              <IconArrowUpRight className="h-4 w-4" />
+              Catat pengeluaran
+            </Link>
+            <Link href="/transaksi/baru?type=in" className="btn-secondary">
+              <IconArrowDownLeft className="h-4 w-4" />
+              Catat dana masuk
+            </Link>
+          </>
+        }
+      />
 
-      <section className="grid grid-cols-3 gap-3">
-        <div className="card">
-          <p className="text-xs text-slate-500">Total Masuk</p>
-          <p className="mt-1 text-base font-semibold text-emerald-600">{rupiah(totalIn)}</p>
-        </div>
-        <div className="card">
-          <p className="text-xs text-slate-500">Total Keluar</p>
-          <p className="mt-1 text-base font-semibold text-rose-600">{rupiah(totalOut)}</p>
-        </div>
-        <div className="card">
-          <p className="text-xs text-slate-500">Transaksi</p>
-          <p className="mt-1 text-base font-semibold">{count}</p>
-        </div>
-      </section>
+      <div className="space-y-6">
+        <FundMeter data={meter} />
 
-      <div className="flex gap-3">
-        <Link href="/transaksi/baru?type=out" className="btn-primary flex-1">
-          + Catat Pengeluaran
-        </Link>
-        <Link href="/transaksi/baru?type=in" className="btn-ghost flex-1">
-          + Dana Masuk
-        </Link>
+        {/* Headline figures, read across like a balance sheet. */}
+        <dl className="card grid grid-cols-2 sm:grid-cols-4">
+          {stats.map((stat, index) => (
+            <div
+              key={stat.label}
+              className={`px-5 py-4 ${index < 2 ? "border-b border-rule sm:border-b-0" : ""} ${
+                index % 2 === 1 ? "border-l border-rule sm:border-l-0" : ""
+              } ${index > 0 ? "sm:border-l sm:border-rule" : ""}`}
+            >
+              <dt className="eyebrow">{stat.label}</dt>
+              <dd className={`num mt-1.5 text-lg font-semibold ${stat.tone}`}>{stat.value}</dd>
+            </div>
+          ))}
+        </dl>
+
+        <section>
+          <div className="mb-3 flex items-baseline justify-between gap-4">
+            <h2 className="section-title">Transaksi terbaru</h2>
+            <Link
+              href="/transaksi"
+              className="font-display text-sm font-medium text-brass-ink underline-offset-4 hover:underline"
+            >
+              Lihat semua
+            </Link>
+          </div>
+
+          {recent.length === 0 ? (
+            <div className="card-pad text-center">
+              <p className="text-sm text-ink-soft">Belum ada transaksi tercatat.</p>
+              <Link href="/transaksi/baru?type=out" className="btn-primary mt-4">
+                Catat pengeluaran pertama
+              </Link>
+            </div>
+          ) : (
+            <TxList transactions={recent} />
+          )}
+        </section>
       </div>
-
-      <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-semibold">Transaksi Terbaru</h2>
-          <Link href="/transaksi" className="text-sm text-indigo-600 hover:underline">
-            Lihat semua
-          </Link>
-        </div>
-        {recent.length === 0 ? (
-          <div className="card text-center text-sm text-slate-500">
-            Belum ada transaksi. Mulai dengan mencatat pengeluaran atau dana masuk.
-          </div>
-        ) : (
-          <div className="card divide-y divide-slate-100 p-0">
-            {recent.map((t) => (
-              <TxRow key={t.id} tx={t} />
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
+    </>
   );
 }

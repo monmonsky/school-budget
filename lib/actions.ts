@@ -23,24 +23,40 @@ function uploadRoot(): string {
   return path.resolve(process.cwd(), UPLOAD_DIR);
 }
 
-async function saveFiles(transactionId: number, files: File[]) {
+/**
+ * Simpan lampiran beserta pratinjaunya.
+ *
+ * Berkas asli disimpan apa adanya karena ia bukti pembayaran. Pratinjau kecil
+ * dibuat di browser (lihat TxForm) dan dikirim sebagai field `thumb_<index>`,
+ * supaya galeri tidak perlu memuat foto 4 MB hanya untuk menampilkan ubin.
+ */
+async function saveFiles(transactionId: number, formData: FormData) {
+  const files = formData.getAll("attachments").filter((f): f is File => f instanceof File);
   const root = uploadRoot();
   fs.mkdirSync(root, { recursive: true });
   const db = getDb();
   const ins = db.prepare(
-    "INSERT INTO attachments (transaction_id, file_path, file_name, mime_type) VALUES (?, ?, ?, ?)"
+    "INSERT INTO attachments (transaction_id, file_path, file_name, mime_type, thumb_path) VALUES (?, ?, ?, ?, ?)"
   );
 
-  for (const file of files) {
+  for (const [index, file] of files.entries()) {
     if (!file || file.size === 0) continue;
     if (file.size > MAX_SIZE) throw new Error(`File ${file.name} melebihi 10 MB`);
     if (!ALLOWED.includes(file.type)) throw new Error(`Tipe file ${file.name} tidak didukung`);
 
-    const ext = path.extname(file.name) || "";
-    const safe = `${transactionId}_${crypto.randomBytes(6).toString("hex")}${ext}`;
-    const buf = Buffer.from(await file.arrayBuffer());
-    fs.writeFileSync(path.join(root, safe), buf);
-    ins.run(transactionId, safe, file.name, file.type);
+    const stem = `${transactionId}_${crypto.randomBytes(6).toString("hex")}`;
+    const safe = `${stem}${path.extname(file.name) || ""}`;
+    fs.writeFileSync(path.join(root, safe), Buffer.from(await file.arrayBuffer()));
+
+    // Pratinjau opsional: kalau browser gagal membuatnya, galeri jatuh ke berkas asli.
+    let thumbName: string | null = null;
+    const thumb = formData.get(`thumb_${index}`);
+    if (thumb instanceof File && thumb.size > 0 && thumb.size <= MAX_SIZE) {
+      thumbName = `${stem}_thumb.jpg`;
+      fs.writeFileSync(path.join(root, thumbName), Buffer.from(await thumb.arrayBuffer()));
+    }
+
+    ins.run(transactionId, safe, file.name, file.type, thumbName);
   }
 }
 
@@ -89,8 +105,7 @@ export async function createTransaction(formData: FormData) {
 
   const id = Number(info.lastInsertRowid);
 
-  const files = formData.getAll("attachments").filter((f): f is File => f instanceof File);
-  await saveFiles(id, files);
+  await saveFiles(id, formData);
 
   logAudit(id, "create", { type, amount, date, categoryId, semesterId, note });
   revalidatePath("/");
@@ -127,8 +142,7 @@ export async function updateTransaction(id: number, formData: FormData) {
     )
     .run(type, amount, date, categoryId, semesterId, note, now, id);
 
-  const files = formData.getAll("attachments").filter((f): f is File => f instanceof File);
-  await saveFiles(id, files);
+  await saveFiles(id, formData);
 
   logAudit(id, "update", {
     before: { type: before.type, amount: before.amount, date: before.date },
@@ -157,19 +171,101 @@ export async function deleteTransaction(id: number) {
   redirect("/transaksi");
 }
 
+// Pulihkan transaksi dari kotak sampah.
+export async function restoreTransaction(id: number) {
+  await requireAuth();
+  const tx = getDb()
+    .prepare("SELECT * FROM transactions WHERE id=?")
+    .get(id) as { deleted_at: string | null } | undefined;
+  if (!tx || !tx.deleted_at) throw new Error("Transaksi tidak ada di kotak sampah");
+
+  getDb()
+    .prepare("UPDATE transactions SET deleted_at=NULL, updated_at=? WHERE id=?")
+    .run(new Date().toISOString(), id);
+
+  logAudit(id, "update", { kind: "restore" });
+  revalidatePath("/");
+  revalidatePath("/transaksi");
+  revalidatePath("/transaksi/terhapus");
+  revalidatePath("/rekap");
+  redirect(`/transaksi/${id}`);
+}
+
+/**
+ * Hapus permanen sebuah transaksi beserta berkas lampirannya.
+ * Tidak bisa dibatalkan — hanya boleh dari kotak sampah.
+ */
+export async function purgeTransaction(id: number) {
+  await requireAuth();
+  const db = getDb();
+  const tx = db
+    .prepare("SELECT * FROM transactions WHERE id=?")
+    .get(id) as { deleted_at: string | null; type: string; amount: number; date: string } | undefined;
+  if (!tx || !tx.deleted_at) throw new Error("Transaksi tidak ada di kotak sampah");
+
+  const files = db
+    .prepare("SELECT file_path, thumb_path FROM attachments WHERE transaction_id=?")
+    .all(id) as { file_path: string; thumb_path: string | null }[];
+
+  for (const file of files) {
+    for (const name of [file.file_path, file.thumb_path]) {
+      if (!name) continue;
+      try {
+        fs.unlinkSync(path.join(uploadRoot(), name));
+      } catch {
+        /* berkas mungkin sudah hilang */
+      }
+    }
+  }
+
+  db.prepare("DELETE FROM attachments WHERE transaction_id=?").run(id);
+  db.prepare("DELETE FROM transactions WHERE id=?").run(id);
+
+  // Jejak sengaja disimpan walau transaksinya sudah tidak ada.
+  logAudit(id, "delete", {
+    kind: "purge",
+    type: tx.type,
+    amount: tx.amount,
+    date: tx.date,
+    attachments: files.length,
+  });
+  revalidatePath("/transaksi/terhapus");
+  revalidatePath("/audit");
+  redirect("/transaksi/terhapus");
+}
+
+/**
+ * Lampiran ikut soft delete: barisnya ditandai, berkasnya tetap di disk supaya
+ * bukti pembayaran masih bisa dipulihkan. Pembersihan permanen terjadi saat
+ * transaksinya dihapus dari kotak sampah.
+ */
 export async function deleteAttachment(attachmentId: number, transactionId: number) {
   await requireAuth();
-  const atts = listAttachments(transactionId);
-  const att = atts.find((a) => a.id === attachmentId);
-  if (att) {
-    try {
-      fs.unlinkSync(path.join(uploadRoot(), att.file_path));
-    } catch {
-      /* file mungkin sudah hilang */
-    }
-    getDb().prepare("DELETE FROM attachments WHERE id=?").run(attachmentId);
-  }
+  const attachment = listAttachments(transactionId).find((a) => a.id === attachmentId);
+  if (!attachment) return;
+
+  getDb()
+    .prepare("UPDATE attachments SET deleted_at=? WHERE id=?")
+    .run(new Date().toISOString(), attachmentId);
+
+  logAudit(transactionId, "delete", {
+    kind: "attachment",
+    attachmentId,
+    fileName: attachment.file_name,
+  });
   revalidatePath(`/transaksi/${transactionId}`);
+  revalidatePath("/audit");
+}
+
+export async function restoreAttachment(attachmentId: number, transactionId: number) {
+  await requireAuth();
+  getDb()
+    .prepare("UPDATE attachments SET deleted_at=NULL WHERE id=? AND transaction_id=?")
+    .run(attachmentId, transactionId);
+
+  logAudit(transactionId, "update", { kind: "attachment_restore", attachmentId });
+  revalidatePath(`/transaksi/${transactionId}`);
+  revalidatePath("/audit");
 }
 
 // ---- KATEGORI & SEMESTER ----
@@ -213,13 +309,30 @@ export async function deleteSemester(id: number) {
 // ---- PENGATURAN UMUM ----
 export async function updateSettings(formData: FormData) {
   await requireAuth();
-  const fundName = String(formData.get("fund_name") ?? "").trim();
+  const before = getSettings();
+  const fundName = String(formData.get("fund_name") ?? "").trim() || "Dana";
   const initialBalance = parseAmount(formData.get("initial_balance"));
+
+  // Saldo awal menggeser seluruh perhitungan, jadi jangan pernah diam-diam jadi 0.
+  if (initialBalance <= 0) throw new Error("Saldo awal harus lebih dari 0");
+
   getDb()
     .prepare("UPDATE settings SET fund_name=?, initial_balance=? WHERE id=1")
-    .run(fundName || "Dana", initialBalance);
+    .run(fundName, initialBalance);
+
+  const changed =
+    before.fund_name !== fundName || before.initial_balance !== initialBalance;
+  if (changed) {
+    logAudit(null, "update", {
+      kind: "settings",
+      before: { fundName: before.fund_name, initialBalance: before.initial_balance },
+      after: { fundName, initialBalance },
+    });
+  }
+
   revalidatePath("/");
   revalidatePath("/pengaturan");
+  revalidatePath("/audit");
 }
 
 export async function changePassword(formData: FormData) {

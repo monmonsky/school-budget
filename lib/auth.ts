@@ -2,10 +2,27 @@ import crypto from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-const SECRET = process.env.SESSION_SECRET || "dev-secret-ganti-di-produksi";
+const DEV_SECRET = "dev-secret-ganti-di-produksi";
+const SECRET = process.env.SESSION_SECRET || DEV_SECRET;
 const COOKIE = "rps_session";
 
+/**
+ * Cookie sesi hanya dilindungi oleh SECRET ini. Kalau nilainya masih bawaan
+ * dan aplikasi jalan di produksi, siapa pun bisa memalsukan sesi — jadi
+ * lebih baik menolak jalan daripada terlihat aman padahal tidak.
+ * Fase build dikecualikan supaya `next build` tidak butuh env var.
+ */
+function assertUsableSecret() {
+  const isBuild = process.env.NEXT_PHASE === "phase-production-build";
+  if (process.env.NODE_ENV === "production" && !isBuild && SECRET === DEV_SECRET) {
+    throw new Error(
+      "SESSION_SECRET belum diatur. Isi env var tersebut dengan nilai acak sebelum menjalankan aplikasi di produksi."
+    );
+  }
+}
+
 function sign(value: string): string {
+  assertUsableSecret();
   return crypto.createHmac("sha256", SECRET).update(value).digest("hex");
 }
 

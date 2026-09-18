@@ -95,6 +95,17 @@ function migrate(db: Database) {
       created_at TEXT NOT NULL
     );
   `);
+
+  // Kolom tambahan untuk DB yang sudah terlanjur dibuat sebelum fitur ini ada.
+  addColumn(db, "attachments", "deleted_at", "TEXT");
+  addColumn(db, "attachments", "thumb_path", "TEXT");
+}
+
+// ALTER TABLE ADD COLUMN tidak punya IF NOT EXISTS di SQLite, jadi dicek dulu.
+function addColumn(db: Database, table: string, column: string, definition: string) {
+  const columns = db.query(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (columns.some((c) => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
 function seed(db: Database) {

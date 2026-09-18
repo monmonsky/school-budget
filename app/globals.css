@@ -7,32 +7,96 @@
 }
 
 body {
-  @apply bg-slate-50 text-slate-800 antialiased;
+  @apply bg-paper text-ink antialiased;
+}
+
+/* Keyboard focus must always stay visible. */
+:focus-visible {
+  @apply outline-none ring-2 ring-brass ring-offset-2 ring-offset-paper;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 @layer components {
+  /* ── Surfaces ──────────────────────────────────────────── */
   .card {
-    @apply rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100;
+    @apply rounded-card border border-rule bg-paper-card shadow-card;
   }
+  .card-pad {
+    @apply card p-5;
+  }
+
+  /* ── Typography helpers ────────────────────────────────── */
+  .eyebrow {
+    @apply font-display text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint;
+  }
+  .page-title {
+    @apply font-display text-2xl font-semibold tracking-tight text-ink;
+  }
+  .section-title {
+    @apply font-display text-sm font-semibold uppercase tracking-[0.1em] text-ink;
+  }
+  /* Currency figures: mono and tabular so digits align down a column. */
+  .num {
+    @apply font-mono tabular-nums;
+  }
+
+  /* ── Controls ──────────────────────────────────────────── */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition disabled:opacity-50;
+    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-control px-3.5 py-2 font-display text-sm font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
-    @apply btn bg-indigo-600 text-white hover:bg-indigo-700;
+    @apply btn bg-ink text-paper-card hover:bg-ink-soft;
+  }
+  .btn-secondary {
+    @apply btn border border-rule-strong bg-paper-card text-ink hover:bg-paper-sunk;
   }
   .btn-ghost {
-    @apply btn bg-slate-100 text-slate-700 hover:bg-slate-200;
+    @apply btn text-ink-soft hover:bg-paper-sunk;
   }
   .btn-danger {
-    @apply btn bg-rose-50 text-rose-600 hover:bg-rose-100;
+    @apply btn border border-oxide/25 bg-oxide-soft text-oxide hover:bg-oxide hover:text-paper-card;
   }
+
   .input {
-    @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100;
+    @apply w-full rounded-control border border-rule-strong bg-paper-card px-3 py-2 text-sm text-ink outline-none transition-colors duration-150 placeholder:text-ink-faint/70 focus:border-ink focus:ring-2 focus:ring-brass/25;
   }
   .label {
-    @apply mb-1.5 block text-sm font-medium text-slate-600;
+    @apply mb-1.5 block font-display text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-faint;
   }
+
   .badge {
-    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center rounded-control px-2 py-0.5 font-display text-[11px] font-semibold uppercase tracking-[0.08em];
+  }
+  .badge-in {
+    @apply badge bg-ledger-soft text-ledger;
+  }
+  .badge-out {
+    @apply badge bg-oxide-soft text-oxide;
+  }
+
+  /* ── Ledger table ──────────────────────────────────────── */
+  .ledger-table {
+    @apply w-full border-collapse text-sm;
+  }
+  .ledger-table thead th {
+    @apply border-b border-rule-strong bg-paper-sunk px-4 py-2.5 text-left font-display text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-faint;
+  }
+  .ledger-table tbody td {
+    @apply border-b border-rule px-4 py-3 align-middle;
+  }
+  .ledger-table tbody tr:last-child td {
+    @apply border-b-0;
+  }
+  .ledger-table tbody tr {
+    @apply transition-colors duration-150 hover:bg-paper-sunk/50;
   }
 }
