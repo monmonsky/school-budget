@@ -1,0 +1,33 @@
+name: school-mgmt
+
+services:
+  app:
+    build: .
+    image: school-mgmt:latest
+    container_name: school-mgmt
+    restart: unless-stopped
+
+    # Secret & konfigurasi dari .env di root project (tidak di-commit).
+    # Isi minimal: APP_PASSWORD, SESSION_SECRET — lihat .env.example.
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      # Audit log dirender di server (lib/format.ts:tanggalWaktu), jadi TZ
+      # container menentukan jam yang tampil. Tanpa ini: UTC, mundur 7 jam.
+      TZ: Asia/Jakarta
+
+    # Hanya dengarkan di loopback — TLS & domain ditangani nginx di host
+    # (deploy/nginx/school-mgmt.dokiva.id.conf sudah proxy ke 127.0.0.1:3004).
+    ports:
+      - "127.0.0.1:3004:3004"
+
+    # SQLite = satu file, satu penulis. JANGAN naikkan replica/scale service ini.
+    volumes:
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,0 +1,29 @@
+# Dependensi & hasil build — selalu dibuat ulang di dalam image
+node_modules
+.next
+out
+
+# State runtime — dipasang sebagai volume, JANGAN masuk image
+data
+uploads
+*.db
+*.db-shm
+*.db-wal
+
+# Secret — diinjeksi saat runtime via env_file, jangan ikut ke layer image
+.env
+.env.local
+
+# Tidak relevan untuk build
+.git
+.gitignore
+.claude
+logs
+ecosystem.config.cjs
+deploy
+*.md
+Dockerfile
+.dockerignore
+compose.yml
+.DS_Store
+*.log
